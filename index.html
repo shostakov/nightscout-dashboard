@@ -194,18 +194,22 @@
       { value: 140, r: 217, g: 249, b: 157 },  // greenish-yellow
       { value: 180, r: 249, g: 115, b: 22  },  // orange
       { value: 250, r: 225, g: 29,  b: 72  },  // ruby red
+      { value: 400, r: 100, g: 0,   b: 20  },  // dark crimson
     ];
-    const BELOW_60 = { r: 192, g: 38, b: 211 }; // red-violet
+    const BELOW_40 = { r: 192, g: 38, b: 211 }; // red-violet (Low)
 
     function lerp(a, b, t) { return Math.round(a + (b - a) * t); }
 
     function glucoseColor(sgv) {
       if (sgv == null) return 'rgb(148, 163, 184)';
+      // ≤40 = red-violet; 40→60 interpolates to cool blue
+      if (sgv <= 40) return `rgb(${BELOW_40.r}, ${BELOW_40.g}, ${BELOW_40.b})`;
       if (sgv < 60) {
-        const t = Math.max(0, sgv) / 60;
-        return `rgb(${lerp(BELOW_60.r, COLOR_STOPS[0].r, t)}, ${lerp(BELOW_60.g, COLOR_STOPS[0].g, t)}, ${lerp(BELOW_60.b, COLOR_STOPS[0].b, t)})`;
+        const t = (sgv - 40) / 20;
+        return `rgb(${lerp(BELOW_40.r, COLOR_STOPS[0].r, t)}, ${lerp(BELOW_40.g, COLOR_STOPS[0].g, t)}, ${lerp(BELOW_40.b, COLOR_STOPS[0].b, t)})`;
       }
-      if (sgv >= 250) return `rgb(${COLOR_STOPS[4].r}, ${COLOR_STOPS[4].g}, ${COLOR_STOPS[4].b})`;
+      const last = COLOR_STOPS[COLOR_STOPS.length - 1];
+      if (sgv >= last.value) return `rgb(${last.r}, ${last.g}, ${last.b})`;
       for (let i = 0; i < COLOR_STOPS.length - 1; i++) {
         const lo = COLOR_STOPS[i], hi = COLOR_STOPS[i + 1];
         if (sgv >= lo.value && sgv < hi.value) {
@@ -213,16 +217,18 @@
           return `rgb(${lerp(lo.r, hi.r, t)}, ${lerp(lo.g, hi.g, t)}, ${lerp(lo.b, hi.b, t)})`;
         }
       }
-      return `rgb(${COLOR_STOPS[4].r}, ${COLOR_STOPS[4].g}, ${COLOR_STOPS[4].b})`;
+      return `rgb(${last.r}, ${last.g}, ${last.b})`;
     }
 
     function glucoseColorAlpha(sgv, alpha) {
       if (sgv == null) return `rgba(148, 163, 184, ${alpha})`;
+      if (sgv <= 40) return `rgba(${BELOW_40.r}, ${BELOW_40.g}, ${BELOW_40.b}, ${alpha})`;
       if (sgv < 60) {
-        const t = Math.max(0, sgv) / 60;
-        return `rgba(${lerp(BELOW_60.r, COLOR_STOPS[0].r, t)}, ${lerp(BELOW_60.g, COLOR_STOPS[0].g, t)}, ${lerp(BELOW_60.b, COLOR_STOPS[0].b, t)}, ${alpha})`;
+        const t = (sgv - 40) / 20;
+        return `rgba(${lerp(BELOW_40.r, COLOR_STOPS[0].r, t)}, ${lerp(BELOW_40.g, COLOR_STOPS[0].g, t)}, ${lerp(BELOW_40.b, COLOR_STOPS[0].b, t)}, ${alpha})`;
       }
-      if (sgv >= 250) return `rgba(${COLOR_STOPS[4].r}, ${COLOR_STOPS[4].g}, ${COLOR_STOPS[4].b}, ${alpha})`;
+      const last = COLOR_STOPS[COLOR_STOPS.length - 1];
+      if (sgv >= last.value) return `rgba(${last.r}, ${last.g}, ${last.b}, ${alpha})`;
       for (let i = 0; i < COLOR_STOPS.length - 1; i++) {
         const lo = COLOR_STOPS[i], hi = COLOR_STOPS[i + 1];
         if (sgv >= lo.value && sgv < hi.value) {
@@ -230,7 +236,7 @@
           return `rgba(${lerp(lo.r, hi.r, t)}, ${lerp(lo.g, hi.g, t)}, ${lerp(lo.b, hi.b, t)}, ${alpha})`;
         }
       }
-      return `rgba(${COLOR_STOPS[4].r}, ${COLOR_STOPS[4].g}, ${COLOR_STOPS[4].b}, ${alpha})`;
+      return `rgba(${last.r}, ${last.g}, ${last.b}, ${alpha})`;
     }
 
     // ─── Trend Mapping ──────────────────────────────────────────────────────────
@@ -262,7 +268,7 @@
 
     // ─── Chart Setup ────────────────────────────────────────────────────────────
 
-    const GRID_VALUES = [60, 80, 140, 180, 250];
+    const GRID_VALUES = [40, 60, 80, 140, 180, 250, 400];
 
     const glowPlugin = {
       id: 'lineGlow',
@@ -339,8 +345,8 @@
 
     const yScaleConfig = (position, drawGrid) => ({
       position,
-      min: 40,
-      max: 280,
+      min: 38,
+      max: 410,
       afterBuildTicks(axis) {
         axis.ticks = GRID_VALUES.map(v => ({ value: v }));
       },
@@ -507,7 +513,12 @@
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const raw = await resp.json();
         const entries = raw
-          .filter(e => e.sgv && e.sgv > 0)
+          .map(e => {
+            if (e.sgv === 'Low'  || e.sgv === 39) return { ...e, sgv: 40 };
+            if (e.sgv === 'High' || e.sgv === 401) return { ...e, sgv: 400 };
+            return e;
+          })
+          .filter(e => typeof e.sgv === 'number' && e.sgv > 0)
           .sort((a, b) => a.date - b.date);
 
         if (!entries.length) return;
