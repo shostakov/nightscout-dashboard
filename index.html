@@ -105,12 +105,12 @@
       display: inline;
     }
 
-    /* TIR progress bar */
+    /* TIR sorted-gradient bar */
     .tir-bar-fill {
       height: 100%;
-      border-radius: 9999px;
-      transition: width 0.6s ease, background-color 0.3s;
-      box-shadow: 0 0 18px rgba(16, 185, 129, 0.4);
+      width: 100%;
+      border-radius: 8px;
+      transition: box-shadow 0.3s;
     }
   </style>
 </head>
@@ -147,7 +147,7 @@
       </div>
 
       <!-- Time in Range card -->
-      <div class="glass-card p-7 md:p-10 flex flex-col justify-between md:basis-2/5 min-h-[180px]">
+      <div class="glass-card p-7 md:p-10 flex flex-col md:basis-2/5 min-h-[180px]">
         <div class="flex justify-between items-start">
           <div>
             <span class="uppercase tracking-[0.2em] text-xs font-bold text-slate-400" style="font-family:'Space Grotesk',sans-serif;">Time in Range</span>
@@ -155,14 +155,24 @@
           </div>
           <span id="tir-value" class="font-black leading-none" style="font-family:'Space Grotesk',sans-serif; font-size: clamp(3rem, 8vw, 5rem); color: #10B981;">--%</span>
         </div>
-        <div class="mt-auto">
-          <div class="h-2.5 w-full bg-slate-800 rounded-full overflow-hidden mb-3">
-            <div id="tir-bar" class="tir-bar-fill" style="width: 0%; background-color: #10B981;"></div>
+        <div class="flex-1 flex items-center">
+          <div class="w-full">
+            <div style="position:relative; padding:28px 0 0;">
+              <!-- Solid green backing bar showing the in-range zone; sits behind gradient bar -->
+              <div id="tir-range-bg" style="position:absolute;top:20px;height:72px;border-radius:10px;background:rgba(16,185,129,0.5);box-shadow:0 0 0 3px rgba(16,185,129,0.5);display:none;"></div>
+              <!-- position:relative so this stacks above the absolute backing bar via DOM order -->
+              <div class="h-14 w-full overflow-hidden" style="position:relative;border-radius:8px;box-shadow:0 0 0 3px rgba(255,255,255,0.85);">
+                <div id="tir-bar" class="tir-bar-fill"></div>
+              </div>
+              <!-- Range boundary labels, positioned by JS -->
+              <div id="label-lo" style="position:absolute;top:2px;transform:translateX(-50%);font-size:0.7rem;font-weight:700;color:#10B981;display:none;text-shadow:0 0 8px #10B981;" class="font-mono">70</div>
+              <div id="label-hi" style="position:absolute;top:2px;transform:translateX(-50%);font-size:0.7rem;font-weight:700;color:#10B981;display:none;text-shadow:0 0 8px #10B981;" class="font-mono">180</div>
+            </div>
           </div>
-          <div class="flex justify-between text-xs text-slate-500" style="font-family:'Space Grotesk',sans-serif;">
-            <span>In range</span>
-            <span id="tir-period">Last 3h</span>
-          </div>
+        </div>
+        <div class="flex justify-between text-xs text-slate-500 mt-auto pt-4" style="font-family:'Space Grotesk',sans-serif;">
+          <span>In range</span>
+          <span id="tir-period">Last 3h</span>
         </div>
       </div>
     </div>
@@ -178,8 +188,9 @@
         <button class="period-btn" data-hours="24">24h</button>
       </div>
       <!-- Chart card -->
-      <div class="glass-card p-5 sm:p-8 flex-1 min-h-0 relative">
+      <div class="glass-card p-5 sm:p-8 flex-1 min-h-0 relative" id="chart-card">
         <canvas id="glucoseChart"></canvas>
+        <canvas id="lightning-overlay" style="position:absolute;pointer-events:none;top:0;left:0;"></canvas>
       </div>
     </div>
 
@@ -482,21 +493,217 @@
       ds.pointRadius = 0;
       ds.pointHoverRadius = 6;
       chartInstance.update();
+      // Reset the lightning cycle so the next shot fires 600ms from now
+      scheduleLightning(600);
     }
 
     function updateTIR(entries, periodHours) {
       const pct = calculateTIR(entries);
       if (pct === null) {
         elTirValue.textContent = '--%';
+        elTirBar.style.backgroundImage = '';
+        elTirBar.style.backgroundColor = '#1e293b';
+        ['label-lo','label-hi','tir-range-bg'].forEach(id =>
+          document.getElementById(id).style.display = 'none'
+        );
         return;
       }
       const color = tirColor(pct);
       elTirValue.textContent = `${pct}%`;
       elTirValue.style.color = color;
-      elTirBar.style.width = `${pct}%`;
-      elTirBar.style.backgroundColor = color;
-      elTirBar.style.boxShadow = `0 0 18px ${color}66`;
       elTirPeriod.textContent = `Last ${periodHours}h`;
+
+      // Sort all readings low→high and build a gradient showing the full distribution
+      const sorted = [...entries].sort((a, b) => a.sgv - b.sgv);
+      const n = sorted.length;
+      const stops = sorted.map((e, i) => {
+        const pos = n === 1 ? 50 : (i / (n - 1)) * 100;
+        return `${glucoseColor(e.sgv)} ${pos.toFixed(1)}%`;
+      });
+      elTirBar.style.backgroundImage = `linear-gradient(to right, ${stops.join(', ')})`;
+      elTirBar.style.backgroundColor = '';
+      elTirBar.style.boxShadow = `0 0 20px ${color}55`;
+
+      // Position labels and backing bar
+      const labelLo = document.getElementById('label-lo');
+      const labelHi = document.getElementById('label-hi');
+      const rangeBg = document.getElementById('tir-range-bg');
+      const belowLo = sorted.filter(e => e.sgv < 70).length;
+      const aboveHi = sorted.filter(e => e.sgv > 180).length;
+      const d = Math.max(n - 1, 1);
+      const loLeft = belowLo === 0 ? 0 : (belowLo / d) * 100;
+      const hiLeft = aboveHi === 0 ? 100 : ((n - aboveHi) / d) * 100;
+
+      // Labels: show only when TIR > 0% (a meaningful in-range zone exists)
+      if (pct > 0) {
+        labelLo.style.left = loLeft.toFixed(1) + '%';
+        labelHi.style.left = Math.min(hiLeft, 100).toFixed(1) + '%';
+        labelLo.style.display = '';
+        labelHi.style.display = '';
+      } else {
+        labelLo.style.display = 'none';
+        labelHi.style.display = 'none';
+      }
+
+      // Backing bar spans the in-range zone; hidden only if TIR is 0%
+      if (pct > 0 && hiLeft > loLeft) {
+        rangeBg.style.left    = loLeft.toFixed(1) + '%';
+        rangeBg.style.width   = (Math.min(hiLeft, 100) - loLeft).toFixed(1) + '%';
+        rangeBg.style.display = '';
+      } else {
+        rangeBg.style.display = 'none';
+      }
+    }
+
+    // ─── Lightning Effect ────────────────────────────────────────────────────────
+
+    const ovCanvas = document.getElementById('lightning-overlay');
+    const ovCtx = ovCanvas.getContext('2d');
+    let boltRaf = null;
+
+    function syncOverlay() {
+      const gc = document.getElementById('glucoseChart');
+      const parentEl = document.getElementById('chart-card');
+      const gcRect = gc.getBoundingClientRect();
+      const parentRect = parentEl.getBoundingClientRect();
+      ovCanvas.width = gc.width;
+      ovCanvas.height = gc.height;
+      ovCanvas.style.left = Math.round(gcRect.left - parentRect.left) + 'px';
+      ovCanvas.style.top = Math.round(gcRect.top - parentRect.top) + 'px';
+      ovCanvas.style.width = Math.round(gcRect.width) + 'px';
+      ovCanvas.style.height = Math.round(gcRect.height) + 'px';
+    }
+
+    function buildPathSamples(numPts) {
+      const meta = chartInstance.getDatasetMeta(0);
+      const pts = meta.data;
+      if (!pts || pts.length < 2) return [];
+      const segsPerPair = Math.max(3, Math.ceil(numPts / (pts.length - 1)));
+      const samples = [];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p0 = pts[i], p1 = pts[i + 1];
+        const cp2x = (p0.cp2 != null ? p0.cp2.x : p0.cp2x) ?? p0.x;
+        const cp2y = (p0.cp2 != null ? p0.cp2.y : p0.cp2y) ?? p0.y;
+        const cp1x = (p1.cp1 != null ? p1.cp1.x : p1.cp1x) ?? p1.x;
+        const cp1y = (p1.cp1 != null ? p1.cp1.y : p1.cp1y) ?? p1.y;
+        for (let j = 0; j < segsPerPair; j++) {
+          const t = j / segsPerPair;
+          const mt = 1 - t;
+          samples.push({
+            x: mt*mt*mt*p0.x + 3*mt*mt*t*cp2x + 3*mt*t*t*cp1x + t*t*t*p1.x,
+            y: mt*mt*mt*p0.y + 3*mt*mt*t*cp2y + 3*mt*t*t*cp1y + t*t*t*p1.y,
+          });
+        }
+      }
+      const last = pts[pts.length - 1];
+      samples.push({ x: last.x, y: last.y });
+      return samples;
+    }
+
+    function fireLightning() {
+      if (!chartInstance.data.datasets[0].data.length) return;
+      syncOverlay();
+      const path = buildPathSamples(500);
+      if (path.length < 10) return;
+
+      // Pre-compute perpendicular jitter for each point (electricity feel)
+      const jitter = path.map((pt, i) => {
+        if (i === 0 || i === path.length - 1) return { x: 0, y: 0 };
+        const prev = path[i - 1], next = path[i + 1];
+        const dx = next.x - prev.x, dy = next.y - prev.y;
+        const len = Math.sqrt(dx*dx + dy*dy) || 1;
+        const mag = (Math.random() - 0.5) * 5;
+        return { x: (-dy / len) * mag, y: (dx / len) * mag };
+      });
+
+      const tailLen = 85;
+      const speed = 7;
+      let headIdx = 0;
+
+      if (boltRaf) cancelAnimationFrame(boltRaf);
+
+      function frame() {
+        ovCtx.clearRect(0, 0, ovCanvas.width, ovCanvas.height);
+        headIdx += speed;
+
+        if (headIdx - tailLen >= path.length) {
+          ovCtx.clearRect(0, 0, ovCanvas.width, ovCanvas.height);
+          return;
+        }
+
+        const segStart = Math.max(0, headIdx - tailLen);
+        const segEnd = Math.min(headIdx, path.length - 1);
+
+        if (segStart < segEnd) {
+          const tailPt = path[segStart];
+          const headPt = path[segEnd];
+
+          // Build the jittered path function
+          function tracePath() {
+            ovCtx.beginPath();
+            ovCtx.moveTo(path[segStart].x + jitter[segStart].x, path[segStart].y + jitter[segStart].y);
+            for (let i = segStart + 1; i <= segEnd; i++) {
+              ovCtx.lineTo(path[i].x + jitter[i].x, path[i].y + jitter[i].y);
+            }
+          }
+
+          const grad = ovCtx.createLinearGradient(tailPt.x, tailPt.y, headPt.x, headPt.y);
+          grad.addColorStop(0,   'rgba(150, 255, 215, 0)');
+          grad.addColorStop(0.4, 'rgba(180, 255, 230, 0.3)');
+          grad.addColorStop(1,   'rgba(230, 255, 250, 0.95)');
+
+          ovCtx.save();
+          ovCtx.lineCap = 'round';
+          ovCtx.lineJoin = 'round';
+
+          // Wide glow halo
+          ovCtx.filter = 'blur(7px)';
+          ovCtx.globalAlpha = 0.6;
+          tracePath();
+          ovCtx.strokeStyle = 'rgba(160, 255, 220, 0.7)';
+          ovCtx.lineWidth = 8;
+          ovCtx.stroke();
+
+          // Tight bright core
+          ovCtx.filter = 'blur(1.5px)';
+          ovCtx.globalAlpha = 1;
+          tracePath();
+          ovCtx.strokeStyle = grad;
+          ovCtx.lineWidth = 1.8;
+          ovCtx.stroke();
+
+          ovCtx.restore();
+
+          // Glowing head orb
+          const grd = ovCtx.createRadialGradient(headPt.x, headPt.y, 0, headPt.x, headPt.y, 16);
+          grd.addColorStop(0,   'rgba(240, 255, 255, 0.9)');
+          grd.addColorStop(0.35,'rgba(180, 255, 230, 0.55)');
+          grd.addColorStop(1,   'rgba(160, 255, 220, 0)');
+          ovCtx.beginPath();
+          ovCtx.arc(headPt.x, headPt.y, 16, 0, Math.PI * 2);
+          ovCtx.fillStyle = grd;
+          ovCtx.fill();
+
+          ovCtx.beginPath();
+          ovCtx.arc(headPt.x, headPt.y, 2.5, 0, Math.PI * 2);
+          ovCtx.fillStyle = 'rgba(255, 255, 255, 0.98)';
+          ovCtx.fill();
+        }
+
+        boltRaf = requestAnimationFrame(frame);
+      }
+
+      frame();
+    }
+
+    // Single-chain timer — each fire schedules the next, so updateChart resets the cycle cleanly
+    let lightningTimer = null;
+    function scheduleLightning(delay) {
+      if (lightningTimer) clearTimeout(lightningTimer);
+      lightningTimer = setTimeout(() => {
+        fireLightning();
+        scheduleLightning(8000);
+      }, delay);
     }
 
     // ─── Data Fetching ───────────────────────────────────────────────────────────
