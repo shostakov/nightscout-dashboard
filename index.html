@@ -566,8 +566,9 @@
       const parentEl = document.getElementById('chart-card');
       const gcRect = gc.getBoundingClientRect();
       const parentRect = parentEl.getBoundingClientRect();
-      ovCanvas.width = gc.width;
-      ovCanvas.height = gc.height;
+      // Use CSS pixel dimensions — meta.data coordinates are in CSS pixels, not device pixels
+      ovCanvas.width = Math.round(gcRect.width);
+      ovCanvas.height = Math.round(gcRect.height);
       ovCanvas.style.left = Math.round(gcRect.left - parentRect.left) + 'px';
       ovCanvas.style.top = Math.round(gcRect.top - parentRect.top) + 'px';
       ovCanvas.style.width = Math.round(gcRect.width) + 'px';
