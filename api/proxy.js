@@ -13,7 +13,7 @@ module.exports = async (req, res) => {
   const rawQuery = req.url.includes('?') ? req.url.split('?')[1] : '';
 
   // Append token to the query string (template literal to avoid bracket encoding issues)
-  const upstreamUrl = `${base}/api/v1/entries?${rawQuery}&token=${nightscoutToken}`;
+  const upstreamUrl = `${base}/api/v1/entries.json?${rawQuery}&token=${nightscoutToken}`;
 
   try {
     const upstream = await fetch(upstreamUrl);
