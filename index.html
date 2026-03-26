@@ -115,18 +115,18 @@
   </style>
 </head>
 
-<body class="min-h-screen text-slate-100 overflow-x-hidden">
+<body class="h-screen overflow-hidden text-slate-100">
   <!-- Shimmer background layer -->
   <div class="shimmer-layer"></div>
 
   <!-- Main content -->
-  <main class="relative z-10 w-full max-w-[1440px] mx-auto px-4 sm:px-8 py-6 sm:py-10 flex flex-col gap-5">
+  <main class="relative z-10 w-full max-w-[1440px] mx-auto px-4 sm:px-8 py-6 sm:py-8 flex flex-col gap-5 h-full">
 
     <!-- Top row: Current Glucose + Time in Range -->
     <div class="flex flex-col md:flex-row gap-5">
 
       <!-- Current Glucose card -->
-      <div class="glass-card p-7 md:p-10 flex flex-col justify-between md:basis-3/5">
+      <div class="p-7 md:p-10 flex flex-col justify-between md:basis-3/5">
         <span class="uppercase tracking-[0.2em] text-xs font-bold text-slate-400" style="font-family:'Space Grotesk',sans-serif;">Current Glucose</span>
         <div class="flex items-end gap-5 mt-3 flex-wrap">
           <!-- Big number -->
@@ -168,9 +168,9 @@
     </div>
 
     <!-- Bottom row: Chart -->
-    <div class="glass-card p-5 sm:p-8 flex flex-col gap-4">
+    <div class="glass-card p-5 sm:p-8 flex flex-col gap-4 flex-1 min-h-0">
       <!-- Chart + Y-axes wrapper -->
-      <div class="relative" style="height: 300px;">
+      <div class="relative flex-1 min-h-0">
         <canvas id="glucoseChart"></canvas>
       </div>
       <!-- Period selector -->
@@ -266,17 +266,72 @@
 
     const glowPlugin = {
       id: 'lineGlow',
-      beforeDatasetsDraw(chart) {
-        // Get the current reading's glucose for glow color
-        const dataset = chart.data.datasets[0];
-        const lastPoint = dataset.data[dataset.data.length - 1];
-        const color = lastPoint ? glucoseColorAlpha(lastPoint.y, 0.5) : 'rgba(16,185,129,0.5)';
-        chart.ctx.shadowColor = color;
-        chart.ctx.shadowBlur = 18;
-      },
       afterDatasetsDraw(chart) {
-        chart.ctx.shadowBlur = 0;
-        chart.ctx.shadowColor = 'transparent';
+        const dataset = chart.data.datasets[0];
+        if (!dataset.data.length) return;
+        const ctx = chart.ctx;
+        const meta = chart.getDatasetMeta(0);
+        const pts = meta.data;
+        if (pts.length < 2) return;
+
+        // Build a gradient mapped to actual glucose colors along the x-axis
+        const x0 = pts[0].x;
+        const x1 = pts[pts.length - 1].x;
+        const grad = ctx.createLinearGradient(x0, 0, x1, 0);
+        dataset.data.forEach((d, i) => {
+          const t = (pts[i].x - x0) / (x1 - x0 || 1);
+          grad.addColorStop(Math.max(0, Math.min(1, t)), glucoseColor(d.y));
+        });
+
+        // Draw one continuous bezier path through all points
+        function drawPath() {
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x, pts[0].y);
+          for (let i = 0; i < pts.length - 1; i++) {
+            const p0 = pts[i], p1 = pts[i + 1];
+            const cp2x = p0.cp2 != null ? p0.cp2.x : p0.cp2x;
+            const cp2y = p0.cp2 != null ? p0.cp2.y : p0.cp2y;
+            const cp1x = p1.cp1 != null ? p1.cp1.x : p1.cp1x;
+            const cp1y = p1.cp1 != null ? p1.cp1.y : p1.cp1y;
+            if (cp2x != null && cp1x != null) {
+              ctx.bezierCurveTo(cp2x, cp2y, cp1x, cp1y, p1.x, p1.y);
+            } else {
+              ctx.lineTo(p1.x, p1.y);
+            }
+          }
+        }
+
+        ctx.save();
+        // Clip to chart area so glow doesn't bleed into axes/labels
+        const a = chart.chartArea;
+        ctx.beginPath();
+        ctx.rect(a.left, a.top, a.right - a.left, a.bottom - a.top);
+        ctx.clip();
+
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = grad;
+
+        // Three passes: wide halo → mid bloom → tight bright core
+        ctx.filter = 'blur(22px)';  ctx.lineWidth = 18; ctx.globalAlpha = 0.55; drawPath(); ctx.stroke();
+        ctx.filter = 'blur(10px)';  ctx.lineWidth = 9;  ctx.globalAlpha = 0.75; drawPath(); ctx.stroke();
+        ctx.filter = 'blur(3px)';   ctx.lineWidth = 4;  ctx.globalAlpha = 0.95; drawPath(); ctx.stroke();
+
+        ctx.restore();
+      }
+    };
+
+    Chart.defaults.elements.point.radius = 0;
+
+    Chart.Tooltip.positioners.aboveBelow = function(elements, eventPosition) {
+      if (!elements.length) return false;
+      const { top, bottom } = this.chart.chartArea;
+      const midY = (top + bottom) / 2;
+      const pointY = elements[0].element.y;
+      if (pointY <= midY) {
+        return { x: eventPosition.x, y: Math.min(pointY + 30, bottom - 5), xAlign: 'center', yAlign: 'top' };
+      } else {
+        return { x: eventPosition.x, y: Math.max(pointY - 30, top + 5), xAlign: 'center', yAlign: 'bottom' };
       }
     };
 
@@ -310,7 +365,7 @@
           tension: 0.4,
           fill: false,
           borderWidth: 2.5,
-          pointRadius: 3,
+          pointRadius: 0,
           pointHoverRadius: 6,
           pointBackgroundColor: [],
           pointBorderColor: 'transparent',
@@ -325,6 +380,9 @@
         responsive: true,
         maintainAspectRatio: false,
         animation: { duration: 400 },
+        elements: {
+          point: { radius: 0, hoverRadius: 0 },
+        },
         interaction: {
           mode: 'index',
           intersect: false,
@@ -332,6 +390,7 @@
         plugins: {
           legend: { display: false },
           tooltip: {
+            position: 'aboveBelow',
             backgroundColor: 'rgba(13,22,33,0.9)',
             borderColor: 'rgba(105,246,184,0.15)',
             borderWidth: 1,
@@ -411,9 +470,12 @@
     function updateChart(entries) {
       const data = entries.map(e => ({ x: e.date, y: e.sgv }));
       const colors = entries.map(e => glucoseColor(e.sgv));
-      chartInstance.data.datasets[0].data = data;
-      chartInstance.data.datasets[0].pointBackgroundColor = colors;
-      chartInstance.update('active');
+      const ds = chartInstance.data.datasets[0];
+      ds.data = data;
+      ds.pointBackgroundColor = colors;
+      ds.pointRadius = 0;
+      ds.pointHoverRadius = 6;
+      chartInstance.update();
     }
 
     function updateTIR(entries, periodHours) {
