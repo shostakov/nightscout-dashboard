@@ -168,18 +168,18 @@
     </div>
 
     <!-- Bottom row: Chart -->
-    <div class="glass-card p-5 sm:p-8 flex flex-col gap-4 flex-1 min-h-0">
-      <!-- Chart + Y-axes wrapper -->
-      <div class="relative flex-1 min-h-0">
-        <canvas id="glucoseChart"></canvas>
-      </div>
-      <!-- Period selector -->
-      <div class="flex flex-wrap justify-center gap-2 pt-1">
+    <div class="glass-card p-5 sm:p-8 flex flex-row gap-4 flex-1 min-h-0">
+      <!-- Period selector (vertical left panel) -->
+      <div class="flex flex-col justify-center gap-2 pr-3 border-r border-white/5">
         <button class="period-btn" data-hours="1">1h</button>
         <button class="period-btn active" data-hours="3">3h</button>
         <button class="period-btn" data-hours="6">6h</button>
         <button class="period-btn" data-hours="12">12h</button>
         <button class="period-btn" data-hours="24">24h</button>
+      </div>
+      <!-- Chart -->
+      <div class="relative flex-1 min-h-0">
+        <canvas id="glucoseChart"></canvas>
       </div>
     </div>
 
