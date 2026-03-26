@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CGM Dashboard</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Chart.js + date adapter -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Manrope', sans-serif;
+      background-color: #02080a;
+      background-image:
+        radial-gradient(circle at 10% 10%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
+        radial-gradient(circle at 90% 90%, rgba(13, 148, 136, 0.12) 0%, transparent 60%);
+      background-attachment: fixed;
+    }
+
+    /* Animated shimmer overlay */
+    .shimmer-layer {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(
+        -45deg,
+        transparent 35%,
+        rgba(16, 185, 129, 0.04) 45%,
+        rgba(105, 246, 184, 0.07) 50%,
+        rgba(16, 185, 129, 0.04) 55%,
+        transparent 65%
+      );
+      background-size: 400% 400%;
+      animation: shimmer 20s ease-in-out infinite;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    @keyframes shimmer {
+      0%   { background-position: 0% 50%; opacity: 0.5; }
+      50%  { background-position: 100% 50%; opacity: 1; }
+      100% { background-position: 0% 50%; opacity: 0.5; }
+    }
+
+    /* Glassmorphic cards */
+    .glass-card {
+      background: rgba(13, 22, 33, 0.45);
+      backdrop-filter: blur(80px);
+      -webkit-backdrop-filter: blur(80px);
+      border: 1px solid rgba(105, 246, 184, 0.08);
+      border-radius: 1.5rem;
+    }
+
+    /* Large glucose number glow */
+    .glucose-glow {
+      filter: drop-shadow(0 0 30px currentColor);
+    }
+
+    /* Period button states */
+    .period-btn {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 0.8rem;
+      padding: 0.5rem 1.1rem;
+      border-radius: 9999px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #94a3b8;
+      background: transparent;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .period-btn:hover {
+      border-color: rgba(255, 255, 255, 0.2);
+      color: #e2e8f0;
+    }
+    .period-btn.active {
+      background: rgba(16, 185, 129, 0.15);
+      border-color: rgba(16, 185, 129, 0.4);
+      color: #6ee7b7;
+      box-shadow: 0 0 16px rgba(16, 185, 129, 0.2);
+    }
+
+    /* Axis label font */
+    .axis-label {
+      font-family: 'Space Grotesk', sans-serif;
+    }
+
+    /* Stale data badge */
+    .stale-badge {
+      display: none;
+      color: #fbbf24;
+      font-size: 0.75rem;
+    }
+    .stale-badge.visible {
+      display: inline;
+    }
+
+    /* TIR progress bar */
+    .tir-bar-fill {
+      height: 100%;
+      border-radius: 9999px;
+      transition: width 0.6s ease, background-color 0.3s;
+      box-shadow: 0 0 18px rgba(16, 185, 129, 0.4);
+    }
+  </style>
+</head>
+
+<body class="min-h-screen text-slate-100 overflow-x-hidden">
+  <!-- Shimmer background layer -->
+  <div class="shimmer-layer"></div>
+
+  <!-- Main content -->
+  <main class="relative z-10 w-full max-w-[1440px] mx-auto px-4 sm:px-8 py-6 sm:py-10 flex flex-col gap-5">
+
+    <!-- Top row: Current Glucose + Time in Range -->
+    <div class="flex flex-col md:flex-row gap-5">
+
+      <!-- Current Glucose card -->
+      <div class="glass-card p-7 md:p-10 flex flex-col justify-between md:basis-3/5">
+        <span class="uppercase tracking-[0.2em] text-xs font-bold text-slate-400" style="font-family:'Space Grotesk',sans-serif;">Current Glucose</span>
+        <div class="flex items-end gap-5 mt-3 flex-wrap">
+          <!-- Big number -->
+          <div class="flex items-baseline gap-3">
+            <span id="sgv-value" class="glucose-glow font-extrabold leading-none" style="font-family:'Space Grotesk',sans-serif; font-size: clamp(5rem, 18vw, 11rem); color: #10B981;">--</span>
+            <span class="text-slate-400 font-semibold" style="font-size: clamp(1rem, 3vw, 1.75rem);">mg/dL</span>
+          </div>
+          <!-- Trend -->
+          <div class="flex flex-col mb-1">
+            <span id="trend-arrow" class="font-bold leading-none" style="font-size: clamp(1.5rem, 4vw, 2.5rem); color: #10B981;">→</span>
+            <span id="trend-label" class="text-slate-400 text-sm mt-1" style="font-family:'Space Grotesk',sans-serif;">Stable</span>
+          </div>
+        </div>
+        <div class="mt-3 flex items-center gap-3 text-xs text-slate-500" style="font-family:'Space Grotesk',sans-serif;">
+          <span id="last-updated">--</span>
+          <span id="stale-badge" class="stale-badge">⚠ Stale data</span>
+        </div>
+      </div>
+
+      <!-- Time in Range card -->
+      <div class="glass-card p-7 md:p-10 flex flex-col justify-between md:basis-2/5 min-h-[180px]">
+        <div class="flex justify-between items-start">
+          <div>
+            <span class="uppercase tracking-[0.2em] text-xs font-bold text-slate-400" style="font-family:'Space Grotesk',sans-serif;">Time in Range</span>
+            <p class="text-slate-300 text-sm mt-1" style="font-family:'Space Grotesk',sans-serif;">Target: 70–180 mg/dL</p>
+          </div>
+          <span id="tir-value" class="font-black leading-none" style="font-family:'Space Grotesk',sans-serif; font-size: clamp(3rem, 8vw, 5rem); color: #10B981;">--%</span>
+        </div>
+        <div class="mt-auto">
+          <div class="h-2.5 w-full bg-slate-800 rounded-full overflow-hidden mb-3">
+            <div id="tir-bar" class="tir-bar-fill" style="width: 0%; background-color: #10B981;"></div>
+          </div>
+          <div class="flex justify-between text-xs text-slate-500" style="font-family:'Space Grotesk',sans-serif;">
+            <span>In range</span>
+            <span id="tir-period">Last 3h</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom row: Chart -->
+    <div class="glass-card p-5 sm:p-8 flex flex-col gap-4">
+      <!-- Chart + Y-axes wrapper -->
+      <div class="relative" style="height: 300px;">
+        <canvas id="glucoseChart"></canvas>
+      </div>
+      <!-- Period selector -->
+      <div class="flex flex-wrap justify-center gap-2 pt-1">
+        <button class="period-btn" data-hours="1">1h</button>
+        <button class="period-btn active" data-hours="3">3h</button>
+        <button class="period-btn" data-hours="6">6h</button>
+        <button class="period-btn" data-hours="12">12h</button>
+        <button class="period-btn" data-hours="24">24h</button>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // ─── Color System ────────────────────────────────────────────────────────────
+
+    const COLOR_STOPS = [
+      { value: 60,  r: 59,  g: 130, b: 246 },  // cool blue
+      { value: 80,  r: 16,  g: 185, b: 129 },  // emerald
+      { value: 140, r: 217, g: 249, b: 157 },  // greenish-yellow
+      { value: 180, r: 249, g: 115, b: 22  },  // orange
+      { value: 250, r: 225, g: 29,  b: 72  },  // ruby red
+    ];
+    const BELOW_60 = { r: 192, g: 38, b: 211 }; // red-violet
+
+    function lerp(a, b, t) { return Math.round(a + (b - a) * t); }
+
+    function glucoseColor(sgv) {
+      if (sgv == null) return 'rgb(148, 163, 184)';
+      if (sgv < 60) {
+        const t = Math.max(0, sgv) / 60;
+        return `rgb(${lerp(BELOW_60.r, COLOR_STOPS[0].r, t)}, ${lerp(BELOW_60.g, COLOR_STOPS[0].g, t)}, ${lerp(BELOW_60.b, COLOR_STOPS[0].b, t)})`;
+      }
+      if (sgv >= 250) return `rgb(${COLOR_STOPS[4].r}, ${COLOR_STOPS[4].g}, ${COLOR_STOPS[4].b})`;
+      for (let i = 0; i < COLOR_STOPS.length - 1; i++) {
+        const lo = COLOR_STOPS[i], hi = COLOR_STOPS[i + 1];
+        if (sgv >= lo.value && sgv < hi.value) {
+          const t = (sgv - lo.value) / (hi.value - lo.value);
+          return `rgb(${lerp(lo.r, hi.r, t)}, ${lerp(lo.g, hi.g, t)}, ${lerp(lo.b, hi.b, t)})`;
+        }
+      }
+      return `rgb(${COLOR_STOPS[4].r}, ${COLOR_STOPS[4].g}, ${COLOR_STOPS[4].b})`;
+    }
+
+    function glucoseColorAlpha(sgv, alpha) {
+      if (sgv == null) return `rgba(148, 163, 184, ${alpha})`;
+      if (sgv < 60) {
+        const t = Math.max(0, sgv) / 60;
+        return `rgba(${lerp(BELOW_60.r, COLOR_STOPS[0].r, t)}, ${lerp(BELOW_60.g, COLOR_STOPS[0].g, t)}, ${lerp(BELOW_60.b, COLOR_STOPS[0].b, t)}, ${alpha})`;
+      }
+      if (sgv >= 250) return `rgba(${COLOR_STOPS[4].r}, ${COLOR_STOPS[4].g}, ${COLOR_STOPS[4].b}, ${alpha})`;
+      for (let i = 0; i < COLOR_STOPS.length - 1; i++) {
+        const lo = COLOR_STOPS[i], hi = COLOR_STOPS[i + 1];
+        if (sgv >= lo.value && sgv < hi.value) {
+          const t = (sgv - lo.value) / (hi.value - lo.value);
+          return `rgba(${lerp(lo.r, hi.r, t)}, ${lerp(lo.g, hi.g, t)}, ${lerp(lo.b, hi.b, t)}, ${alpha})`;
+        }
+      }
+      return `rgba(${COLOR_STOPS[4].r}, ${COLOR_STOPS[4].g}, ${COLOR_STOPS[4].b}, ${alpha})`;
+    }
+
+    // ─── Trend Mapping ──────────────────────────────────────────────────────────
+
+    const TREND_MAP = {
+      DoubleDown:    { arrow: '↓↓', label: 'Dropping Fast' },
+      SingleDown:    { arrow: '↓',  label: 'Falling' },
+      FortyFiveDown: { arrow: '↘',  label: 'Falling Slightly' },
+      Flat:          { arrow: '→',  label: 'Stable' },
+      FortyFiveUp:   { arrow: '↗',  label: 'Rising Slightly' },
+      SingleUp:      { arrow: '↑',  label: 'Rising' },
+      DoubleUp:      { arrow: '↑↑', label: 'Rising Fast' },
+    };
+    const TREND_FALLBACK = { arrow: '→', label: 'Stable' };
+
+    // ─── TIR ────────────────────────────────────────────────────────────────────
+
+    function calculateTIR(entries) {
+      if (!entries.length) return null;
+      const inRange = entries.filter(e => e.sgv >= 70 && e.sgv <= 180).length;
+      return Math.round((inRange / entries.length) * 100);
+    }
+
+    function tirColor(pct) {
+      if (pct >= 70) return '#10B981';
+      if (pct >= 50) return '#F97316';
+      return '#E11D48';
+    }
+
+    // ─── Chart Setup ────────────────────────────────────────────────────────────
+
+    const GRID_VALUES = [60, 80, 140, 180, 250];
+
+    const glowPlugin = {
+      id: 'lineGlow',
+      beforeDatasetsDraw(chart) {
+        // Get the current reading's glucose for glow color
+        const dataset = chart.data.datasets[0];
+        const lastPoint = dataset.data[dataset.data.length - 1];
+        const color = lastPoint ? glucoseColorAlpha(lastPoint.y, 0.5) : 'rgba(16,185,129,0.5)';
+        chart.ctx.shadowColor = color;
+        chart.ctx.shadowBlur = 18;
+      },
+      afterDatasetsDraw(chart) {
+        chart.ctx.shadowBlur = 0;
+        chart.ctx.shadowColor = 'transparent';
+      }
+    };
+
+    Chart.register(glowPlugin);
+
+    const yScaleConfig = (position, drawGrid) => ({
+      position,
+      min: 40,
+      max: 280,
+      afterBuildTicks(axis) {
+        axis.ticks = GRID_VALUES.map(v => ({ value: v }));
+      },
+      ticks: {
+        font: { family: "'Space Grotesk', sans-serif", weight: '700', size: 11 },
+        color: (ctx) => glucoseColor(ctx.tick.value),
+        padding: 8,
+      },
+      grid: {
+        drawOnChartArea: drawGrid,
+        color: (ctx) => glucoseColorAlpha(ctx.tick.value, 0.2),
+        lineWidth: 1,
+      },
+      border: { display: false },
+    });
+
+    const chartInstance = new Chart(document.getElementById('glucoseChart'), {
+      type: 'line',
+      data: {
+        datasets: [{
+          data: [],
+          tension: 0.4,
+          fill: false,
+          borderWidth: 2.5,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          pointBackgroundColor: [],
+          pointBorderColor: 'transparent',
+          pointHoverBorderColor: 'rgba(255,255,255,0.6)',
+          pointHoverBorderWidth: 2,
+          segment: {
+            borderColor: (ctx) => glucoseColor(ctx.p0.parsed.y),
+          },
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 400 },
+        interaction: {
+          mode: 'index',
+          intersect: false,
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: 'rgba(13,22,33,0.9)',
+            borderColor: 'rgba(105,246,184,0.15)',
+            borderWidth: 1,
+            titleFont: { family: "'Space Grotesk', sans-serif", weight: '700' },
+            bodyFont: { family: "'Manrope', sans-serif" },
+            callbacks: {
+              title: (items) => {
+                const ts = items[0].parsed.x;
+                return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              },
+              label: (item) => ` ${Math.round(item.parsed.y)} mg/dL`,
+              labelColor: (item) => ({
+                borderColor: 'transparent',
+                backgroundColor: glucoseColor(item.parsed.y),
+              }),
+            },
+          },
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: {
+              unit: 'minute',
+              displayFormats: { minute: 'HH:mm' },
+              tooltipFormat: 'HH:mm',
+            },
+            ticks: {
+              font: { family: "'Space Grotesk', sans-serif", weight: '700', size: 11 },
+              color: 'rgba(148,163,184,0.5)',
+              maxTicksLimit: 8,
+              maxRotation: 0,
+            },
+            grid: {
+              color: 'rgba(255,255,255,0.04)',
+            },
+            border: { display: false },
+          },
+          y: yScaleConfig('left', true),
+          y1: yScaleConfig('right', false),
+        },
+      },
+    });
+
+    // ─── DOM references ──────────────────────────────────────────────────────────
+
+    const elSgv        = document.getElementById('sgv-value');
+    const elArrow      = document.getElementById('trend-arrow');
+    const elLabel      = document.getElementById('trend-label');
+    const elUpdated    = document.getElementById('last-updated');
+    const elStale      = document.getElementById('stale-badge');
+    const elTirValue   = document.getElementById('tir-value');
+    const elTirBar     = document.getElementById('tir-bar');
+    const elTirPeriod  = document.getElementById('tir-period');
+
+    // ─── UI Update Functions ─────────────────────────────────────────────────────
+
+    function updateCurrentReading(entry) {
+      if (!entry) return;
+      const color = glucoseColor(entry.sgv);
+      elSgv.textContent = entry.sgv;
+      elSgv.style.color = color;
+      elSgv.style.filter = `drop-shadow(0 0 30px ${color})`;
+
+      const trend = TREND_MAP[entry.direction] || TREND_FALLBACK;
+      elArrow.textContent = trend.arrow;
+      elArrow.style.color = color;
+      elLabel.textContent = trend.label;
+
+      const ageMs = Date.now() - entry.date;
+      const ageMin = Math.floor(ageMs / 60000);
+      elUpdated.textContent = ageMin < 1 ? 'Just now' : `${ageMin} min ago`;
+
+      const isStale = ageMs > 15 * 60 * 1000;
+      elStale.classList.toggle('visible', isStale);
+    }
+
+    function updateChart(entries) {
+      const data = entries.map(e => ({ x: e.date, y: e.sgv }));
+      const colors = entries.map(e => glucoseColor(e.sgv));
+      chartInstance.data.datasets[0].data = data;
+      chartInstance.data.datasets[0].pointBackgroundColor = colors;
+      chartInstance.update('active');
+    }
+
+    function updateTIR(entries, periodHours) {
+      const pct = calculateTIR(entries);
+      if (pct === null) {
+        elTirValue.textContent = '--%';
+        return;
+      }
+      const color = tirColor(pct);
+      elTirValue.textContent = `${pct}%`;
+      elTirValue.style.color = color;
+      elTirBar.style.width = `${pct}%`;
+      elTirBar.style.backgroundColor = color;
+      elTirBar.style.boxShadow = `0 0 18px ${color}66`;
+      elTirPeriod.textContent = `Last ${periodHours}h`;
+    }
+
+    // ─── Data Fetching ───────────────────────────────────────────────────────────
+
+    let currentPeriodHours = 3;
+    let refreshTimer = null;
+
+    async function fetchData(periodHours) {
+      try {
+        const startISO = new Date(Date.now() - periodHours * 3600 * 1000).toISOString();
+        const count = periodHours * 12 + 10;
+        const url = `/api/proxy?find[dateString][$gte]=${encodeURIComponent(startISO)}&count=${count}`;
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const raw = await resp.json();
+        const entries = raw
+          .filter(e => e.sgv && e.sgv > 0)
+          .sort((a, b) => a.date - b.date);
+
+        if (!entries.length) return;
+
+        updateCurrentReading(entries[entries.length - 1]);
+        updateChart(entries);
+        updateTIR(entries, periodHours);
+      } catch (err) {
+        console.error('Fetch error:', err);
+      }
+    }
+
+    function startRefresh(periodHours) {
+      clearInterval(refreshTimer);
+      currentPeriodHours = periodHours;
+      fetchData(periodHours);
+      refreshTimer = setInterval(() => fetchData(periodHours), 60000);
+    }
+
+    // ─── Period Buttons ──────────────────────────────────────────────────────────
+
+    document.querySelectorAll('.period-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        startRefresh(parseInt(btn.dataset.hours, 10));
+      });
+    });
+
+    // ─── Window resize fallback ──────────────────────────────────────────────────
+
+    window.addEventListener('resize', () => chartInstance.resize());
+
+    // ─── Init ────────────────────────────────────────────────────────────────────
+
+    startRefresh(currentPeriodHours);
+  </script>
+</body>
+</html>
