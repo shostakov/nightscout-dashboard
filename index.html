@@ -216,12 +216,12 @@
         </div>
       </div>
 
-      <!-- Time in Range card -->
-      <div class="glass-card p-7 md:p-10 flex flex-col md:basis-2/5 min-h-[180px]">
+      <!-- Time in Range / Time in Tight Range card (alternates every 10s) -->
+      <div id="tir-card" class="glass-card p-7 md:p-10 flex flex-col md:basis-2/5 min-h-[180px]" style="transition: opacity 0.35s;">
         <div class="flex justify-between items-start">
           <div>
-            <span class="uppercase tracking-[0.2em] text-xs font-bold text-slate-400" style="font-family:'Space Grotesk',sans-serif;">Time in Range</span>
-            <p class="text-slate-300 text-sm mt-1" style="font-family:'Space Grotesk',sans-serif;">Target: 70–180 mg/dL</p>
+            <span id="tir-card-title" class="uppercase tracking-[0.2em] text-xs font-bold text-slate-400" style="font-family:'Space Grotesk',sans-serif;">Time in Range</span>
+            <p id="tir-card-target" class="text-slate-300 text-sm mt-1" style="font-family:'Space Grotesk',sans-serif;">Target: 70–180 mg/dL</p>
           </div>
           <span id="tir-value" class="font-black leading-none" style="font-family:'Space Grotesk',sans-serif; font-size: clamp(3rem, 8vw, 5rem); color: #10B981;">--%</span>
         </div>
@@ -241,7 +241,7 @@
           </div>
         </div>
         <div class="flex justify-between text-xs text-slate-500 mt-auto pt-4" style="font-family:'Space Grotesk',sans-serif;">
-          <span>In range</span>
+          <span id="tir-footer-label">In range</span>
           <span id="tir-period">Last 3h</span>
         </div>
       </div>
@@ -377,7 +377,7 @@
 
     // ─── TIR ────────────────────────────────────────────────────────────────────
 
-    function calculateTIR(entries) {
+    function calculateTIR(entries, lo = 70, hi = 180) {
       if (!entries.length) return null;
       // Time-weighted: each reading's value applies from its timestamp until
       // the next reading (or until now for the most recent reading).
@@ -390,10 +390,15 @@
         const end = i + 1 < sorted.length ? sorted[i + 1].date : now;
         const duration = end - start;
         totalMs += duration;
-        if (sorted[i].sgv >= 70 && sorted[i].sgv <= 180) inRangeMs += duration;
+        if (sorted[i].sgv >= lo && sorted[i].sgv <= hi) inRangeMs += duration;
       }
       return totalMs > 0 ? Math.round((inRangeMs / totalMs) * 100) : null;
     }
+
+    const TIR_CONFIGS = {
+      tir:  { lo: 70, hi: 180, title: 'Time in Range',       target: '70–180 mg/dL', footer: 'In range' },
+      titr: { lo: 70, hi: 140, title: 'Time in Tight Range',  target: '70–140 mg/dL', footer: 'In tight range' },
+    };
 
     function tirColor(pct) {
       if (pct >= 70) return '#10B981';
@@ -582,9 +587,27 @@
     const elLabel      = document.getElementById('trend-label');
     const elUpdated    = document.getElementById('last-updated');
     const elStale      = document.getElementById('stale-badge');
-    const elTirValue   = document.getElementById('tir-value');
-    const elTirBar     = document.getElementById('tir-bar');
-    const elTirPeriod  = document.getElementById('tir-period');
+    const elTirValue      = document.getElementById('tir-value');
+    const elTirBar        = document.getElementById('tir-bar');
+    const elTirPeriod     = document.getElementById('tir-period');
+    const elTirCard       = document.getElementById('tir-card');
+    const elTirCardTitle  = document.getElementById('tir-card-title');
+    const elTirCardTarget = document.getElementById('tir-card-target');
+    const elTirFooterLabel= document.getElementById('tir-footer-label');
+    const elLabelHi       = document.getElementById('label-hi');
+
+    let tirMode        = 'tir';
+    let lastTirEntries = [];
+    let lastPeriodHours= 3;
+
+    setInterval(() => {
+      tirMode = tirMode === 'tir' ? 'titr' : 'tir';
+      elTirCard.style.opacity = '0';
+      setTimeout(() => {
+        updateTIR(lastTirEntries, lastPeriodHours);
+        elTirCard.style.opacity = '1';
+      }, 350);
+    }, 10000);
 
     // ─── UI Update Functions ─────────────────────────────────────────────────────
 
@@ -622,7 +645,16 @@
     }
 
     function updateTIR(entries, periodHours) {
-      const pct = calculateTIR(entries);
+      lastTirEntries  = entries;
+      lastPeriodHours = periodHours;
+      const cfg = TIR_CONFIGS[tirMode];
+
+      elTirCardTitle.textContent  = cfg.title;
+      elTirCardTarget.textContent = `Target: ${cfg.target}`;
+      elTirFooterLabel.textContent= cfg.footer;
+      elLabelHi.textContent       = String(cfg.hi);
+
+      const pct = calculateTIR(entries, cfg.lo, cfg.hi);
       if (pct === null) {
         elTirValue.textContent = '--%';
         elTirBar.style.backgroundImage = '';
@@ -650,23 +682,22 @@
 
       // Position labels and backing bar
       const labelLo = document.getElementById('label-lo');
-      const labelHi = document.getElementById('label-hi');
       const rangeBg = document.getElementById('tir-range-bg');
-      const belowLo = sorted.filter(e => e.sgv < 70).length;
-      const aboveHi = sorted.filter(e => e.sgv > 180).length;
+      const belowLo = sorted.filter(e => e.sgv < cfg.lo).length;
+      const aboveHi = sorted.filter(e => e.sgv > cfg.hi).length;
       const d = Math.max(n - 1, 1);
       const loLeft = belowLo === 0 ? 0 : (belowLo / d) * 100;
       const hiLeft = aboveHi === 0 ? 100 : ((n - aboveHi) / d) * 100;
 
       // Labels: show only when TIR > 0% (a meaningful in-range zone exists)
       if (pct > 0) {
-        labelLo.style.left = loLeft.toFixed(1) + '%';
-        labelHi.style.left = Math.min(hiLeft, 100).toFixed(1) + '%';
-        labelLo.style.display = '';
-        labelHi.style.display = '';
+        labelLo.style.left  = loLeft.toFixed(1) + '%';
+        elLabelHi.style.left= Math.min(hiLeft, 100).toFixed(1) + '%';
+        labelLo.style.display  = '';
+        elLabelHi.style.display= '';
       } else {
-        labelLo.style.display = 'none';
-        labelHi.style.display = 'none';
+        labelLo.style.display  = 'none';
+        elLabelHi.style.display= 'none';
       }
 
       // Backing bar spans the in-range zone; hidden only if TIR is 0%
