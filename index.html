@@ -22,12 +22,19 @@
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 
   <style>
+    :root {
+      --theme-bg: #02080a;
+      --theme-c:  16, 185, 129;
+      --theme-c2: 13, 148, 136;
+      --theme-hi: 105, 246, 184;
+    }
+
     body {
       font-family: 'Manrope', sans-serif;
-      background-color: #02080a;
+      background-color: var(--theme-bg);
       background-image:
-        radial-gradient(circle at 10% 10%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
-        radial-gradient(circle at 90% 90%, rgba(13, 148, 136, 0.12) 0%, transparent 60%);
+        radial-gradient(circle at 10% 10%, rgba(var(--theme-c), 0.08) 0%, transparent 50%),
+        radial-gradient(circle at 90% 90%, rgba(var(--theme-c2), 0.12) 0%, transparent 60%);
       background-attachment: fixed;
     }
 
@@ -38,9 +45,9 @@
       background: linear-gradient(
         -45deg,
         transparent 35%,
-        rgba(16, 185, 129, 0.04) 45%,
-        rgba(105, 246, 184, 0.07) 50%,
-        rgba(16, 185, 129, 0.04) 55%,
+        rgba(var(--theme-c), 0.04) 45%,
+        rgba(var(--theme-hi), 0.07) 50%,
+        rgba(var(--theme-c), 0.04) 55%,
         transparent 65%
       );
       background-size: 400% 400%;
@@ -60,7 +67,7 @@
       background: rgba(13, 22, 33, 0.45);
       backdrop-filter: blur(80px);
       -webkit-backdrop-filter: blur(80px);
-      border: 1px solid rgba(105, 246, 184, 0.08);
+      border: 1px solid rgba(var(--theme-hi), 0.08);
       border-radius: 1.5rem;
     }
 
@@ -87,10 +94,10 @@
       color: #e2e8f0;
     }
     .period-btn.active {
-      background: rgba(16, 185, 129, 0.15);
-      border-color: rgba(16, 185, 129, 0.4);
-      color: #6ee7b7;
-      box-shadow: 0 0 16px rgba(16, 185, 129, 0.2);
+      background: rgba(var(--theme-c), 0.15);
+      border-color: rgba(var(--theme-c), 0.4);
+      color: rgb(var(--theme-hi));
+      box-shadow: 0 0 16px rgba(var(--theme-c), 0.2);
     }
 
     /* Axis label font */
@@ -115,10 +122,70 @@
       border-radius: 8px;
       transition: box-shadow 0.3s;
     }
+
+    /* Theme picker */
+    .theme-picker {
+      position: fixed;
+      top: 1.5rem;
+      left: 1.5rem;
+      z-index: 100;
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.4s ease;
+    }
+    .theme-picker.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .theme-swatch {
+      width: 1.5rem;
+      height: 1.5rem;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.75);
+      cursor: pointer;
+      transition: width 0.2s, height 0.2s, border-color 0.2s;
+      padding: 0;
+      flex-shrink: 0;
+    }
+    .theme-swatch:hover {
+      border-color: rgba(255, 255, 255, 1);
+    }
+    .theme-swatch.active {
+      width: 2rem;
+      height: 2rem;
+      border-color: rgba(255, 255, 255, 1);
+    }
   </style>
 </head>
 
 <body class="h-screen overflow-hidden text-slate-100">
+  <!-- Theme picker (tap/click anywhere to reveal, fades after 2.5s) -->
+  <div class="theme-picker" id="theme-picker">
+    <button class="theme-swatch active" data-theme="green" title="Green" style="background:
+      linear-gradient(130deg, transparent 20%, rgba(16,185,129,0.7) 26%, rgba(105,246,184,0.35) 30%, transparent 38%),
+      linear-gradient(50deg,  transparent 38%, rgba(16,185,129,0.45) 44%, transparent 52%),
+      linear-gradient(175deg, rgba(13,148,136,0.5) 5%, transparent 30%, rgba(16,185,129,0.35) 65%, transparent 85%),
+      #02080a;"></button>
+    <button class="theme-swatch" data-theme="blue" title="Blue" style="background:
+      linear-gradient(130deg, transparent 20%, rgba(59,130,246,0.7) 26%, rgba(147,197,253,0.35) 30%, transparent 38%),
+      linear-gradient(50deg,  transparent 38%, rgba(59,130,246,0.45) 44%, transparent 52%),
+      linear-gradient(175deg, rgba(37,99,235,0.5) 5%, transparent 30%, rgba(59,130,246,0.35) 65%, transparent 85%),
+      #02080f;"></button>
+    <button class="theme-swatch" data-theme="purple" title="Purple" style="background:
+      linear-gradient(130deg, transparent 20%, rgba(139,92,246,0.7) 26%, rgba(196,181,253,0.35) 30%, transparent 38%),
+      linear-gradient(50deg,  transparent 38%, rgba(139,92,246,0.45) 44%, transparent 52%),
+      linear-gradient(175deg, rgba(109,40,217,0.5) 5%, transparent 30%, rgba(139,92,246,0.35) 65%, transparent 85%),
+      #08020f;"></button>
+    <button class="theme-swatch" data-theme="red" title="Red" style="background:
+      linear-gradient(130deg, transparent 20%, rgba(225,29,72,0.7) 26%, rgba(253,164,175,0.35) 30%, transparent 38%),
+      linear-gradient(50deg,  transparent 38%, rgba(225,29,72,0.45) 44%, transparent 52%),
+      linear-gradient(175deg, rgba(190,18,60,0.5) 5%, transparent 30%, rgba(225,29,72,0.35) 65%, transparent 85%),
+      #0f0204;"></button>
+  </div>
+
   <!-- Shimmer background layer -->
   <div class="shimmer-layer"></div>
 
@@ -200,6 +267,48 @@
   </main>
 
   <script>
+    // ─── Theme System ────────────────────────────────────────────────────────────
+
+    const THEMES = {
+      green:  { bg: '#02080a', c: '16, 185, 129',  c2: '13, 148, 136',  hi: '105, 246, 184' },
+      blue:   { bg: '#02080f', c: '59, 130, 246',  c2: '37, 99, 235',   hi: '147, 197, 253' },
+      purple: { bg: '#08020f', c: '139, 92, 246',  c2: '109, 40, 217',  hi: '196, 181, 253' },
+      red:    { bg: '#0f0204', c: '225, 29, 72',   c2: '190, 18, 60',   hi: '253, 164, 175' },
+    };
+
+    function applyTheme(name) {
+      const t = THEMES[name];
+      if (!t) return;
+      const root = document.documentElement;
+      root.style.setProperty('--theme-bg', t.bg);
+      root.style.setProperty('--theme-c',  t.c);
+      root.style.setProperty('--theme-c2', t.c2);
+      root.style.setProperty('--theme-hi', t.hi);
+      document.querySelectorAll('.theme-swatch').forEach(s => {
+        s.classList.toggle('active', s.dataset.theme === name);
+      });
+      localStorage.setItem('cgm-theme', name);
+    }
+
+    // Show picker on any tap/click; clicking a swatch also applies theme
+    const themePickerEl = document.getElementById('theme-picker');
+    let themePickerTimer = null;
+
+    function showThemePicker() {
+      themePickerEl.classList.add('visible');
+      clearTimeout(themePickerTimer);
+      themePickerTimer = setTimeout(() => themePickerEl.classList.remove('visible'), 2500);
+    }
+
+    document.addEventListener('click', (e) => {
+      const swatch = e.target.closest('.theme-swatch');
+      if (swatch) applyTheme(swatch.dataset.theme);
+      showThemePicker();
+    });
+
+    // Apply saved or default theme immediately
+    applyTheme(localStorage.getItem('cgm-theme') || 'green');
+
     // ─── Color System ────────────────────────────────────────────────────────────
 
     const COLOR_STOPS = [
