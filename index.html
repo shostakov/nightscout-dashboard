@@ -379,8 +379,20 @@
 
     function calculateTIR(entries) {
       if (!entries.length) return null;
-      const inRange = entries.filter(e => e.sgv >= 70 && e.sgv <= 180).length;
-      return Math.round((inRange / entries.length) * 100);
+      // Time-weighted: each reading's value applies from its timestamp until
+      // the next reading (or until now for the most recent reading).
+      const sorted = [...entries].sort((a, b) => a.date - b.date);
+      const now = Date.now();
+      let inRangeMs = 0;
+      let totalMs = 0;
+      for (let i = 0; i < sorted.length; i++) {
+        const start = sorted[i].date;
+        const end = i + 1 < sorted.length ? sorted[i + 1].date : now;
+        const duration = end - start;
+        totalMs += duration;
+        if (sorted[i].sgv >= 70 && sorted[i].sgv <= 180) inRangeMs += duration;
+      }
+      return totalMs > 0 ? Math.round((inRangeMs / totalMs) * 100) : null;
     }
 
     function tirColor(pct) {
