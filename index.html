@@ -607,7 +607,7 @@
         updateTIR(lastTirEntries, lastPeriodHours);
         elTirCard.style.opacity = '1';
       }, 350);
-    }, 10000);
+    }, 20000);
 
     // ─── UI Update Functions ─────────────────────────────────────────────────────
 
@@ -669,25 +669,37 @@
       elTirValue.style.color = color;
       elTirPeriod.textContent = `Last ${periodHours}h`;
 
-      // Sort all readings low→high and build a gradient showing the full distribution
-      const sorted = [...entries].sort((a, b) => a.sgv - b.sgv);
-      const n = sorted.length;
-      const stops = sorted.map((e, i) => {
-        const pos = n === 1 ? 50 : (i / (n - 1)) * 100;
-        return `${glucoseColor(e.sgv)} ${pos.toFixed(1)}%`;
+      // Compute time duration each reading was active (same logic as calculateTIR)
+      const chrono = [...entries].sort((a, b) => a.date - b.date);
+      const now = Date.now();
+      const durations = chrono.map((e, i) => {
+        const end = i + 1 < chrono.length ? chrono[i + 1].date : now;
+        return { sgv: e.sgv, ms: end - e.date };
+      });
+      const totalMs = durations.reduce((s, d) => s + d.ms, 0);
+
+      // Sort by sgv low→high; each segment width is proportional to time active
+      const bySgv = [...durations].sort((a, b) => a.sgv - b.sgv);
+      const stops = [];
+      let pos = 0;
+      bySgv.forEach(d => {
+        const w = (d.ms / totalMs) * 100;
+        const c = glucoseColor(d.sgv);
+        stops.push(`${c} ${pos.toFixed(2)}%`);
+        pos += w;
+        stops.push(`${c} ${pos.toFixed(2)}%`);
       });
       elTirBar.style.backgroundImage = `linear-gradient(to right, ${stops.join(', ')})`;
       elTirBar.style.backgroundColor = '';
       elTirBar.style.boxShadow = `0 0 20px ${color}55`;
 
-      // Position labels and backing bar
+      // Position labels and backing bar using time-weighted boundaries
       const labelLo = document.getElementById('label-lo');
       const rangeBg = document.getElementById('tir-range-bg');
-      const belowLo = sorted.filter(e => e.sgv < cfg.lo).length;
-      const aboveHi = sorted.filter(e => e.sgv > cfg.hi).length;
-      const d = Math.max(n - 1, 1);
-      const loLeft = belowLo === 0 ? 0 : (belowLo / d) * 100;
-      const hiLeft = aboveHi === 0 ? 100 : ((n - aboveHi) / d) * 100;
+      const belowMs = bySgv.filter(d => d.sgv < cfg.lo).reduce((s, d) => s + d.ms, 0);
+      const aboveMs = bySgv.filter(d => d.sgv > cfg.hi).reduce((s, d) => s + d.ms, 0);
+      const loLeft = (belowMs / totalMs) * 100;
+      const hiLeft = ((totalMs - aboveMs) / totalMs) * 100;
 
       // Labels: show only when TIR > 0% (a meaningful in-range zone exists)
       if (pct > 0) {
