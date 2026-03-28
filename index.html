@@ -400,7 +400,12 @@
       titr: { lo: 70, hi: 140, title: 'Time in Tight Range',  target: '70–140 mg/dL', footer: 'In tight range' },
     };
 
-    function tirColor(pct) {
+    function tirColor(pct, mode = 'tir') {
+      if (mode === 'titr') {
+        if (pct >= 50) return '#10B981';
+        if (pct >= 40) return '#F97316';
+        return '#E11D48';
+      }
       if (pct >= 70) return '#10B981';
       if (pct >= 50) return '#F97316';
       return '#E11D48';
@@ -664,7 +669,7 @@
         );
         return;
       }
-      const color = tirColor(pct);
+      const color = tirColor(pct, tirMode);
       elTirValue.textContent = `${pct}%`;
       elTirValue.style.color = color;
       elTirPeriod.textContent = `Last ${periodHours}h`;
